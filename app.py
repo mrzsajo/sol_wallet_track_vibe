@@ -65,6 +65,7 @@ def analyze_wallet(wallet):
                 links[acc]["shared_programs"].add(program)
 
 
+
             # SOL transfers
             if ix.get("programId") == SYSTEM_PROGRAM and "parsed" in ix:
                 info = ix["parsed"]["info"]
