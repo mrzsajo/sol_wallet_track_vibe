@@ -53,21 +53,19 @@ def analyze_wallet(wallet):
             continue
 
         message = tx["transaction"]["message"]
-        instructions = message["instructions"]
+        instructions = message.get("instructions", [])
 
         for ix in instructions:
-    program = ix.get("programId")
+            program = ix.get("programId")
 
-    # Track program usage safely
-    if program:  # skip None
-        for acc in message.get("accountKeys", []):
-            if isinstance(acc, str) and acc != wallet:
-                links[acc]["shared_programs"].add(program)
-
-
+            # Track program usage safely
+            if program:
+                for acc in message.get("accountKeys", []):
+                    if isinstance(acc, str) and acc != wallet:
+                        links[acc]["shared_programs"].add(program)
 
             # SOL transfers
-            if ix.get("programId") == SYSTEM_PROGRAM and "parsed" in ix:
+            if program == SYSTEM_PROGRAM and "parsed" in ix:
                 info = ix["parsed"]["info"]
                 src = info.get("source")
                 dst = info.get("destination")
@@ -80,7 +78,7 @@ def analyze_wallet(wallet):
                         funding_wallet = src
 
             # SPL token transfers
-            if ix.get("programId") == TOKEN_PROGRAM and "parsed" in ix:
+            if program == TOKEN_PROGRAM and "parsed" in ix:
                 info = ix["parsed"]["info"]
                 src = info.get("source")
                 dst = info.get("destination")
@@ -88,37 +86,9 @@ def analyze_wallet(wallet):
 
                 if src == wallet:
                     links[dst]["token_transfers"] += 1
-                    links[dst]["shared_tokens"].add(mint)
-                if dst == wallet:
-                    links[src]["token_transfers"] += 1
-                    links[src]["shared_tokens"].add(mint)
+                    if mint:
+                        links[dst]["shared_tokens"].add(m_]()
 
-    # Funding correlation
-    if funding_wallet:
-        for w in links:
-            sigs2 = get_signatures(w)
-            for s in sigs2:
-                tx = get_transaction(s["signature"])
-                if not tx:
-                    continue
-                for ix in tx["transaction"]["message"]["instructions"]:
-                    if "parsed" in ix:
-                        info = ix["parsed"].get("info", {})
-                        if info.get("destination") == w and info.get("source") == funding_wallet:
-                            links[w]["funded_by_same"] = True
-
-    # Scoring
-    for w, d in links.items():
-        score = 0
-        score += d["sol_transfers"] * 10
-        score += d["token_transfers"] * 12
-        score += len(d["shared_tokens"]) * 8
-        score += len(d["shared_programs"]) * 5
-        if d["funded_by_same"]:
-            score += 35
-        d["score"] = min(score, 100)
-
-    return links
 
 # ---------------- UI ----------------
 st.set_page_config(page_title="Solana Wallet Cluster Tracker", layout="wide")
