@@ -68,4 +68,100 @@ def analyze_wallet(wallet):
             if program == SYSTEM_PROGRAM and "parsed" in ix:
                 info = ix["parsed"]["info"]
                 src = info.get("source")
-                dst = info.get("destinat
+                dst = info.get("destination")
+
+                if src == wallet:
+                    links[dst]["sol_transfers"] += 1
+                if dst == wallet:
+                    links[src]["sol_transfers"] += 1
+                    if not funding_wallet:
+                        funding_wallet = src
+
+            # SPL token transfers
+            if program == TOKEN_PROGRAM and "parsed" in ix:
+                info = ix["parsed"]["info"]
+                src = info.get("source")
+                dst = info.get("destination")
+                mint = info.get("mint")
+
+                if src == wallet:
+                    links[dst]["token_transfers"] += 1
+                    if mint:
+                        links[dst]["shared_tokens"].add(mint)
+                if dst == wallet:
+                    links[src]["token_transfers"] += 1
+                    if mint:
+                        links[src]["shared_tokens"].add(mint)
+
+    # Funding correlation
+    if funding_wallet:
+        for w in links:
+            sigs2 = get_signatures(w)
+            for s in sigs2:
+                tx = get_transaction(s["signature"])
+                if not tx:
+                    continue
+                for ix in tx["transaction"]["message"].get("instructions", []):
+                    if "parsed" in ix:
+                        info = ix["parsed"].get("info", {})
+                        if info.get("destination") == w and info.get("source") == funding_wallet:
+                            links[w]["funded_by_same"] = True
+
+    # Scoring
+    for w, d in links.items():
+        score = 0
+        score += d["sol_transfers"] * 10
+        score += d["token_transfers"] * 12
+        score += len(d["shared_tokens"]) * 8
+        score += len(d["shared_programs"]) * 5
+        if d["funded_by_same"]:
+            score += 35
+        d["score"] = min(score, 100)
+
+    return links
+
+# ---------------- UI ----------------
+st.set_page_config(page_title="Solana Wallet Cluster Tracker", layout="wide")
+
+st.title("🧠 Solana Wallet Cluster Tracker")
+st.caption("Full on-chain activity analysis · probabilistic linking")
+
+wallet = st.text_input("Enter Solana wallet address")
+
+if wallet:
+    with st.spinner("Analyzing Solana blockchain activity..."):
+        links = analyze_wallet(wallet)
+
+    if not links:
+        st.warning("No linked wallets found.")
+    else:
+        st.subheader("Linked Wallets")
+
+        for w, d in sorted(links.items(), key=lambda x: x[1]["score"], reverse=True):
+            st.markdown(
+                f"""
+**{w}**
+- SOL transfers: {d['sol_transfers']}
+- Token transfers: {d['token_transfers']}
+- Shared tokens: {len(d['shared_tokens'])}
+- Shared programs: {len(d['shared_programs'])}
+- Same funding wallet: {'✅' if d['funded_by_same'] else '❌'}
+- **Confidence score: {d['score']}%**
+"""
+            )
+
+        # Graph
+        G = nx.Graph()
+        G.add_node(wallet)
+
+        for w, d in links.items():
+            if d["score"] >= 25:
+                G.add_edge(wallet, w, weight=d["score"])
+
+        fig, ax = plt.subplots(figsize=(9, 9))
+        nx.draw(G, with_labels=True, node_size=2200, font_size=7)
+        st.pyplot(fig)
+
+st.markdown("---")
+st.caption("⚠️ On-chain analysis only · not proof of ownership")
+
