@@ -56,12 +56,14 @@ def analyze_wallet(wallet):
         instructions = message["instructions"]
 
         for ix in instructions:
-            program = ix.get("programId")
+    program = ix.get("programId")
 
-            # Track program usage
-            for acc in message["accountKeys"]:
-                if acc != wallet:
-                    links[acc]["shared_programs"].add(program)
+    # Track program usage safely
+    if program:  # skip None
+        for acc in message.get("accountKeys", []):
+            if isinstance(acc, str) and acc != wallet:
+                links[acc]["shared_programs"].add(program)
+
 
             # SOL transfers
             if ix.get("programId") == SYSTEM_PROGRAM and "parsed" in ix:
